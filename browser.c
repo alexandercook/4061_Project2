@@ -7,7 +7,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <gtk/gtk.h>
-    
+
+#define MAX_MESSAGE 500
 /*
  * Name:		uri_entered_cb
  * Input arguments:'entry'-address bar where the url was entered
@@ -35,7 +36,7 @@ void uri_entered_cb(GtkWidget* entry, gpointer data)
 
 	if(tab_index < 0)
 	{
-		printf("errors\n");
+		printf("error\n");
                 return;
 	}
 
@@ -87,9 +88,11 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
  * Function:            This function will make a CONTROLLER window and be blocked until the program terminate.
  */
 int run_control(comm_channel comm)
-{
+{	char* msg = "Hello from control!";
 	browser_window * b_window = NULL;
-
+	
+	write(comm.child_to_parent_fd[1], msg , MAX_MESSAGE);
+	
 	//Create controler process
 	create_browser(CONTROLLER_TAB, 0, G_CALLBACK(new_tab_created_cb), G_CALLBACK(uri_entered_cb), &b_window, comm);
 
@@ -135,9 +138,38 @@ int main()
 	//This is Router process
 	//Make a controller and URL-RENDERING tab when user request it. 
 	//With pipes, this process should communicate with controller and tabs.
-
+	pid_t pid;
+	comm_channel controller; //controller communications
+	int flags;
+	char msg[MAX_MESSAGE];
+	int r;
+	
+	pipe(controller.parent_to_child_fd);
+	pipe(controller.child_to_parent_fd);
+	
+	if((pid = fork() ) < 0 ){
+		perror("Failed to fork controller process.\n");
+		exit(-1);
+	}
+	
+	if (pid == 0){ //child
+		close(controller.parent_to_child_fd[1]); //close parent write
+		close(controller.child_to_parent_fd[0]); //close read for child to parent
+		run_control(controller);
+	}
+	else{ //parent
+		close(controller.parent_to_child_fd[0]); //close child read
+		close(controller.child_to_parent_fd[1]); //close write for child to parent
+		flags = fcntl(1 , F_GETFL, 0); //not sure if this call is right
+		fcntl(controller.child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
+		while(1){
+			if((r = read(controller.child_to_parent_fd[0], msg, MAX_MESSAGE)) >= 0) 
+				printf("The message %d: %s\n", r, msg);
+			
+			usleep(500000);
+		}
+	}
 	printf("Please read the instruction and comments on source code provided for the project 2\n");
-	//Insert code here!!
 
 	return 0;
 }
