@@ -79,6 +79,9 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
 	// Users press + button on the control window. 
 	// What is next?
 	// Insert code here!!
+	
+	char* msg = "CREATE_TAB";
+	write(channel.child_to_parent_fd[1], msg , MAX_MESSAGE);
 }
 
 /*
@@ -143,6 +146,7 @@ int main()
 	int flags;
 	char msg[MAX_MESSAGE];
 	int r;
+	int openTabs=0;
 	
 	pipe(controller.parent_to_child_fd);
 	pipe(controller.child_to_parent_fd);
@@ -163,8 +167,17 @@ int main()
 		flags = fcntl(1 , F_GETFL, 0); //not sure if this call is right
 		fcntl(controller.child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
 		while(1){
-			if((r = read(controller.child_to_parent_fd[0], msg, MAX_MESSAGE)) >= 0) 
+			if((r = read(controller.child_to_parent_fd[0], msg, MAX_MESSAGE)) >= 0){
 				printf("The message %d: %s\n", r, msg);
+				if (strncmp(msg, "CREATE_TAB", MAX_MESSAGE)==0){
+					openTabs+=1;
+					if (fork()==0){
+						printf("%d\n", openTabs);
+						run_url_browser(openTabs, controller);	
+					}
+				}
+				
+			}
 			
 			usleep(500000);
 		}
