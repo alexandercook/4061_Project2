@@ -8,7 +8,7 @@
 #include <errno.h>
 #include <gtk/gtk.h>
 
-#define MAX_MESSAGE 500
+
 /*
  * Name:		uri_entered_cb
  * Input arguments:'entry'-address bar where the url was entered
@@ -78,7 +78,10 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
 
 	// Users press + button on the control window. 
 	// What is next?
-	// Insert code here!!
+	child_req_to_parent create_tab;
+	create_tab.type = CREATE_TAB;
+	
+	write(channel.child_to_parent_fd[1], &create_tab, sizeof(child_req_to_parent));
 }
 
 /*
@@ -88,10 +91,10 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
  * Function:            This function will make a CONTROLLER window and be blocked until the program terminate.
  */
 int run_control(comm_channel comm)
-{	char* msg = "Hello from control!";
+{	//char* msg = "Hello from control!";
 	browser_window * b_window = NULL;
 	
-	write(comm.child_to_parent_fd[1], msg , MAX_MESSAGE);
+	//write(comm.child_to_parent_fd[1], msg , MAX_MESSAGE);
 	
 	//Create controler process
 	create_browser(CONTROLLER_TAB, 0, G_CALLBACK(new_tab_created_cb), G_CALLBACK(uri_entered_cb), &b_window, comm);
@@ -133,16 +136,18 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 	return 0;
 }
 
+
 int main()
 {
 	//This is Router process
 	//Make a controller and URL-RENDERING tab when user request it. 
 	//With pipes, this process should communicate with controller and tabs.
 	pid_t pid;
-	comm_channel controller; //controller communications
+	comm_channel controller, tab; //controller/tab communications
 	int flags;
-	char msg[MAX_MESSAGE];
+	//char msg[MAX_MESSAGE];
 	int r;
+	child_req_to_parent chld_msg;
 	
 	pipe(controller.parent_to_child_fd);
 	pipe(controller.child_to_parent_fd);
@@ -163,10 +168,26 @@ int main()
 		flags = fcntl(1 , F_GETFL, 0); //not sure if this call is right
 		fcntl(controller.child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
 		while(1){
-			if((r = read(controller.child_to_parent_fd[0], msg, MAX_MESSAGE)) >= 0) 
-				printf("The message %d: %s\n", r, msg);
 			
-			usleep(500000);
+			if((r = read(controller.child_to_parent_fd[0], (void*) &chld_msg, sizeof(child_req_to_parent))) > 0){ 
+				printf("The message %d:\n", r);
+				
+				//when + is pushed, handle create tab
+				if(chld_msg.type == CREATE_TAB ){
+					pipe(tab.parent_to_child_fd);
+					pipe(tab.child_to_parent_fd);
+					if(fork() == 0) { //then child
+						close(tab.parent_to_child_fd[1]); //close parent write
+						close(tab.child_to_parent_fd[0]); //close read for child to parent
+						run_url_browser(1 , tab);
+					}	
+					else{ //parent
+						close(tab.parent_to_child_fd[0]); //close child read
+						close(tab.child_to_parent_fd[1]); //close write for child to parent
+					}
+				}	
+			}
+			usleep(10000);
 		}
 	}
 	printf("Please read the instruction and comments on source code provided for the project 2\n");
