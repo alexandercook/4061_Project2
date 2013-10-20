@@ -122,11 +122,13 @@ int run_control(comm_channel comm)
 int run_url_browser(int nTabIndex, comm_channel comm)
 {
 	browser_window * b_window = NULL;
-	
+	int r, flags;
 	//Create controler window
 	create_browser(URL_RENDERING_TAB, nTabIndex, G_CALLBACK(new_tab_created_cb), G_CALLBACK(uri_entered_cb), &b_window, comm);
 
 	child_req_to_parent req;
+	flags = fcntl(1 , F_GETFL, 0); //not sure if this call is right
+	fcntl(comm.parent_to_child_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
 	
 	while (1) 
 	{
@@ -135,6 +137,13 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 
 		//Need to communicate with Router process here.
 		//Insert code here!!
+		if((r = read(comm.parent_to_child_fd[0], (void*) &req, sizeof(child_req_to_parent))) > 0){ 
+				printf("Router to tab Message %d:\n", r);
+				if(req.type == TAB_KILLED ){
+					exit(1);
+				}
+			}
+				
 
 	}
 
@@ -179,7 +188,6 @@ int main()
 		flags = fcntl(1 , F_GETFL, 0); //not sure if this call is right
 		fcntl(controller.child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
 		while(1){
-			
 			if((r = read(controller.child_to_parent_fd[0], (void*) &chld_msg, sizeof(child_req_to_parent))) > 0){ 
 				printf("The message %d:\n", r);
 				
@@ -189,8 +197,11 @@ int main()
 					printf("index: %d\n" , index);
 					
 					if (index >= 0 && index < 15 && openTab[index] == 0){
+						openTab[index] = 1; //now open and not valid for future open
 						pipe(tab[index].parent_to_child_fd);
 						pipe(tab[index].child_to_parent_fd);
+						fcntl(tab[index].child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
+
 						if(fork() == 0) { //then child
 							close(tab[index].parent_to_child_fd[1]); //close parent write
 							close(tab[index].child_to_parent_fd[0]); //close read for child to parent
@@ -204,12 +215,47 @@ int main()
 					else {
 						perror("Invalid tab entered. Try again.\n New tab index: >=1, <=15, and not currently open.");
 					}
-				}	
+				}
+				else if(chld_msg.type == TAB_KILLED){
+					for (i = 0; i < MAX_TABS; i++){
+								if( openTab[i] == 1){
+									printf("Killing all tabs...\n");
+									write(tab[i].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent)); //send kill to child
+									close(tab[i].child_to_parent_fd[0]); //close tab pipes
+									close(tab[i].parent_to_child_fd[1]);
+									openTab[i] = 0; //show as closed tab
+									}	
+
+					}
+					exit(1);
+				}
+				
+			}
+			
+			//This will be useful for URI request 
+			for (i = 0; i < MAX_TABS; i++){
+				if( openTab[i] == 1 && (r = read(tab[i].child_to_parent_fd[0], 
+										(void*) &chld_msg, 
+										sizeof(child_req_to_parent))) > 0){
+					printf("Tab Message %d:\n", r);
+					if(chld_msg.type == TAB_KILLED){
+						printf("Kill Message from wrapper!");
+						write(tab[i].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent)); //send kill to child
+						close(tab[i].child_to_parent_fd[0]); //close tab pipes
+						close(tab[i].parent_to_child_fd[1]);
+						openTab[i] = 0; //show as closed tab
+					}
+				}
+			}
+			while(waitpid(-1, NULL, WNOHANG) > 0){
+				printf("Just reaped a child.\n");//reap all children
 			}
 			usleep(10000);
 		}
 	}
-	printf("Please read the instruction and comments on source code provided for the project 2\n");
+	
+	//Controller was closed, so close all tabs and then exit
+
 
 	return 0;
 }
