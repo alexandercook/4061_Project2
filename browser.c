@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <gtk/gtk.h>
 
+#define MAX_TABS 15
 
 /*
  * Name:		uri_entered_cb
@@ -68,7 +69,10 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
 		return;
 	}
 
- 	int tab_index = ((browser_window*)data)->tab_index;
+ 	int tab_index = ((browser_window*)data)->tab_index; //this is always zero...
+ 	if(tab_index != 0){
+		printf("Tab index of new tab was not zero!\n");
+	}
 	
 	//This channel have pipes to communicate with router. 
 	comm_channel channel = ((browser_window*)data)->channel;
@@ -80,6 +84,7 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
 	// What is next?
 	child_req_to_parent create_tab;
 	create_tab.type = CREATE_TAB;
+	create_tab.req.new_tab_req.tab_index = tab_index;
 	
 	write(channel.child_to_parent_fd[1], &create_tab, sizeof(child_req_to_parent));
 }
@@ -143,14 +148,20 @@ int main()
 	//Make a controller and URL-RENDERING tab when user request it. 
 	//With pipes, this process should communicate with controller and tabs.
 	pid_t pid;
-	comm_channel controller, tab; //controller/tab communications
+	comm_channel controller; //controller communications
+	comm_channel tab[MAX_TABS];
+	short openTab[MAX_TABS]; //keep track of open/closed tabs
 	int flags;
 	//char msg[MAX_MESSAGE];
-	int r;
+	int r, i, index = -1;
 	child_req_to_parent chld_msg;
 	
 	pipe(controller.parent_to_child_fd);
 	pipe(controller.child_to_parent_fd);
+	
+	for (i = 0; i < MAX_TABS; i++){
+		openTab[i] = 0; //initialize all tabs to closed
+	}
 	
 	if((pid = fork() ) < 0 ){
 		perror("Failed to fork controller process.\n");
@@ -174,16 +185,24 @@ int main()
 				
 				//when + is pushed, handle create tab
 				if(chld_msg.type == CREATE_TAB ){
-					pipe(tab.parent_to_child_fd);
-					pipe(tab.child_to_parent_fd);
-					if(fork() == 0) { //then child
-						close(tab.parent_to_child_fd[1]); //close parent write
-						close(tab.child_to_parent_fd[0]); //close read for child to parent
-						run_url_browser(1 , tab);
-					}	
-					else{ //parent
-						close(tab.parent_to_child_fd[0]); //close child read
-						close(tab.child_to_parent_fd[1]); //close write for child to parent
+					index++; //= chld_msg.req.new_tab_req.tab_index;
+					printf("index: %d\n" , index);
+					
+					if (index >= 0 && index < 15 && openTab[index] == 0){
+						pipe(tab[index].parent_to_child_fd);
+						pipe(tab[index].child_to_parent_fd);
+						if(fork() == 0) { //then child
+							close(tab[index].parent_to_child_fd[1]); //close parent write
+							close(tab[index].child_to_parent_fd[0]); //close read for child to parent
+							run_url_browser(index+1 , tab[index]);
+						}	
+						else{ //parent
+							close(tab[index].parent_to_child_fd[0]); //close child read
+							close(tab[index].child_to_parent_fd[1]); //close write for child to parent
+						}
+					}
+					else {
+						perror("Invalid tab entered. Try again.\n New tab index: >=1, <=15, and not currently open.");
 					}
 				}	
 			}
