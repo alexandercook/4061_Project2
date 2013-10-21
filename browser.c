@@ -143,6 +143,7 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 					exit(1);
 				}
 			}
+		//need to read for "render message" (same as above if statement)
 				
 
 	}
@@ -196,7 +197,7 @@ int main()
 					index++; //= chld_msg.req.new_tab_req.tab_index;
 					printf("index: %d\n" , index);
 					
-					if (index >= 0 && index < 15 && openTab[index] == 0){
+					if (index >= 0 && index < MAX_TABS && openTab[index] == 0){
 						openTab[index] = 1; //now open and not valid for future open
 						pipe(tab[index].parent_to_child_fd);
 						pipe(tab[index].child_to_parent_fd);
@@ -213,7 +214,7 @@ int main()
 						}
 					}
 					else {
-						perror("Invalid tab entered. Try again.\n New tab index: >=1, <=15, and not currently open.");
+						perror("Invalid tab entered. Try again.\n New tab index: >=1, <=MAX_TABS(15), and not currently open.");
 					}
 				}
 				else if(chld_msg.type == TAB_KILLED){
@@ -229,10 +230,13 @@ int main()
 					}
 					exit(1);
 				}
-				
+				//need another else if for uri, as well as a default error if message is invalid
+				else{
+					perror("Invalid Message from controller.\n Expecting 'new tab', 'new uri', or 'tab kill'.");
+				}
 			}
 			
-			//This will be useful for URI request 
+			//This will be useful for URI request...maybe? Not sure
 			for (i = 0; i < MAX_TABS; i++){
 				if( openTab[i] == 1 && (r = read(tab[i].child_to_parent_fd[0], 
 										(void*) &chld_msg, 
