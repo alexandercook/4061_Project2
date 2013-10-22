@@ -44,9 +44,18 @@ void uri_entered_cb(GtkWidget* entry, gpointer data)
 	// Get the URL.
 	char* uri = get_entered_uri(entry);
 
-	// Now you get the URI from the controller.
+	// Now you get the URI from the controller
 	// What is next? 
 	// Insert code here!!
+	child_req_to_parent new_uri;
+	
+	strncpy (new_uri.req.uri_req.uri, uri, 512);
+	
+	new_uri.type = NEW_URI_ENTERED;
+	///new_uri.req.uri_req.uri = uri;
+	new_uri.req.uri_req.render_in_tab = tab_index;
+	
+	write(channel.child_to_parent_fd[1], &new_uri, sizeof(child_req_to_parent));
 }
 
 /*
@@ -83,6 +92,7 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
 	// Users press + button on the control window. 
 	// What is next?
 	child_req_to_parent create_tab;
+	
 	create_tab.type = CREATE_TAB;
 	create_tab.req.new_tab_req.tab_index = tab_index;
 	
@@ -141,6 +151,11 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 				printf("Router to tab Message %d:\n", r);
 				if(req.type == TAB_KILLED ){
 					exit(1);
+				}
+				if(req.type == NEW_URI_ENTERED ){
+					printf("%s\n", req.req.uri_req.uri);
+					render_web_page_in_tab(req.req.uri_req.uri, b_window);
+					
 				}
 			}
 		//need to read for "render message" (same as above if statement)
@@ -229,6 +244,10 @@ int main()
 
 					}
 					exit(1);
+				}
+				else if(chld_msg.type == NEW_URI_ENTERED){
+						printf("New URI Entered!!!");
+						write(tab[chld_msg.req.uri_req.render_in_tab].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent)); //send new_uri_entered to child
 				}
 				//need another else if for uri, as well as a default error if message is invalid
 				else{
