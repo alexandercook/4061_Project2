@@ -1,3 +1,8 @@
+/* CSci4061 F2013 Assignment 2
+* date: 10/23/2013
+* name: Devon Grandahl, Alex Cook
+* id: 4260296, 4123940 */
+
 #include "wrapper.h"
 #include <sys/types.h>
 #include <unistd.h>
@@ -33,7 +38,7 @@ void uri_entered_cb(GtkWidget* entry, gpointer data)
 	comm_channel channel = b_window->channel;
 	
 	// Get the tab index where the URL is to be rendered
-	int tab_index = query_tab_id_for_request(entry, data);
+	int tab_index = query_tab_id_for_request(entry, data) - 1;
 
 	if(tab_index < 0)
 	{
@@ -45,17 +50,12 @@ void uri_entered_cb(GtkWidget* entry, gpointer data)
 	char* uri = get_entered_uri(entry);
 
 	// Now you get the URI from the controller
-	// What is next? 
-	// Insert code here!!
-	child_req_to_parent new_uri;
-	
-	strncpy (new_uri.req.uri_req.uri, uri, 512);
-	
+	child_req_to_parent new_uri;  //Declare new message
+	strncpy (new_uri.req.uri_req.uri, uri, 512); //Add the new uri to the request struct
 	new_uri.type = NEW_URI_ENTERED;
-	///new_uri.req.uri_req.uri = uri;
 	new_uri.req.uri_req.render_in_tab = tab_index;
 	
-	write(channel.child_to_parent_fd[1], &new_uri, sizeof(child_req_to_parent));
+	write(channel.child_to_parent_fd[1], &new_uri, sizeof(child_req_to_parent)); //Write new uri request into pipe
 }
 
 /*
@@ -87,7 +87,7 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
 	comm_channel channel = ((browser_window*)data)->channel;
 
 	// Create a new request of type CREATE_TAB
-	child_req_to_parent new_req;
+	//child_req_to_parent new_req;
 
 	// Users press + button on the control window. 
 	// What is next?
@@ -108,8 +108,6 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
 int run_control(comm_channel comm)
 {	//char* msg = "Hello from control!";
 	browser_window * b_window = NULL;
-	
-	//write(comm.child_to_parent_fd[1], msg , MAX_MESSAGE);
 	
 	//Create controler process
 	create_browser(CONTROLLER_TAB, 0, G_CALLBACK(new_tab_created_cb), G_CALLBACK(uri_entered_cb), &b_window, comm);
@@ -153,8 +151,7 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 					exit(1);
 				}
 				if(req.type == NEW_URI_ENTERED ){
-					printf("%s\n", req.req.uri_req.uri);
-					render_web_page_in_tab(req.req.uri_req.uri, b_window);
+					render_web_page_in_tab(req.req.uri_req.uri, b_window); //Call the actual render function
 					
 				}
 			}
@@ -178,7 +175,7 @@ int main()
 	short openTab[MAX_TABS]; //keep track of open/closed tabs
 	int flags;
 	//char msg[MAX_MESSAGE];
-	int r, i, index = -1;
+	int r, i, j, index = -1;
 	child_req_to_parent chld_msg;
 	
 	pipe(controller.parent_to_child_fd);
@@ -208,8 +205,13 @@ int main()
 				printf("The message %d:\n", r);
 				
 				//when + is pushed, handle create tab
-				if(chld_msg.type == CREATE_TAB ){
-					index++; //= chld_msg.req.new_tab_req.tab_index;
+				if(chld_msg.type == CREATE_TAB ){ // Assign index to lowest free tab
+					for (j=0; j<=MAX_TABS; j++){
+						if (openTab[j]==0){
+							index=j;
+							break;
+						}
+					}
 					printf("index: %d\n" , index);
 					
 					if (index >= 0 && index < MAX_TABS && openTab[index] == 0){
@@ -246,16 +248,13 @@ int main()
 					exit(1);
 				}
 				else if(chld_msg.type == NEW_URI_ENTERED){
-						printf("New URI Entered!!!");
 						write(tab[chld_msg.req.uri_req.render_in_tab].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent)); //send new_uri_entered to child
 				}
-				//need another else if for uri, as well as a default error if message is invalid
 				else{
 					perror("Invalid Message from controller.\n Expecting 'new tab', 'new uri', or 'tab kill'.");
 				}
 			}
 			
-			//This will be useful for URI request...maybe? Not sure
 			for (i = 0; i < MAX_TABS; i++){
 				if( openTab[i] == 1 && (r = read(tab[i].child_to_parent_fd[0], 
 										(void*) &chld_msg, 
