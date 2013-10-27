@@ -9,7 +9,6 @@
 
 3. To use this program from the shell, type './browser'. 
 
-<<<<<<< HEAD
 4. What our program does:
 	a. Using forks and pipes, we create processes that simulate a simple multi-process browser. 
 	b. A “Router” process manages communication between the Controller window and the tab windows. As well as the Controller creation and tab creation. 
