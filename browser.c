@@ -42,7 +42,7 @@ void uri_entered_cb(GtkWidget* entry, gpointer data)
 
 	if(tab_index < 0)
 	{
-		printf("tab indexing error\n");
+		printf("Input correct tab number.\n");
                 return;
 	}
 
@@ -156,7 +156,6 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 
 		//Need to communicate with Router process here.
 		if((r = read(comm.parent_to_child_fd[0], (void*) &req, sizeof(child_req_to_parent))) > 0){ 
-				printf("Router to tab Message %d:\n", r);
 				if(req.type == TAB_KILLED ){
 					exit(1);
 				}
@@ -229,9 +228,7 @@ int main()
 		perror("Error setting flags");
 	} //non-blocking read of child
 		while(1){
-			if((r = read(controller.child_to_parent_fd[0], (void*) &chld_msg, sizeof(child_req_to_parent))) > 0){ 
-				printf("The message %d:\n", r);
-				
+			if((r = read(controller.child_to_parent_fd[0], (void*) &chld_msg, sizeof(child_req_to_parent))) > 0){ 				
 				//when + is pushed, handle create tab
 				if(chld_msg.type == CREATE_TAB ){ // Assign index to lowest free tab
 					for (j=0; j<=MAX_TABS; j++){
@@ -240,7 +237,6 @@ int main()
 							break;
 						}
 					}
-					printf("index: %d\n" , index);
 					
 					if (index >= 0 && index < MAX_TABS && openTab[index] == 0){
 						openTab[index] = 1; //now open and not valid for future open
@@ -285,7 +281,6 @@ int main()
 				else if(chld_msg.type == TAB_KILLED){
 					for (i = 0; i < MAX_TABS; i++){
 								if( openTab[i] == 1){
-									printf("Killing all tabs...\n");
 									if(!write(tab[i].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent))){
 										printf("Error writing to pipe\n");
 									} //send kill to child
@@ -314,9 +309,7 @@ int main()
 				if( openTab[i] == 1 && (r = read(tab[i].child_to_parent_fd[0], 
 										(void*) &chld_msg, 
 										sizeof(child_req_to_parent))) > 0){
-					printf("Tab Message %d:\n", r);
 					if(chld_msg.type == TAB_KILLED){
-						printf("Kill Message from wrapper!");
 						if(!write(tab[i].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent))){
 							printf("Error writing to pipe\n");
 						} //send kill to child
@@ -333,13 +326,13 @@ int main()
 				}
 			}
 			while(waitpid(-1, NULL, WNOHANG) > 0){
-				printf("Just reaped a child.\n");//reap all children
+				//reap all children
 			}
 			usleep(10000);
 		}
 	}
 	
-	//Controller was closed, so close all tabs and then exit
+	
 
 
 	return 0;
