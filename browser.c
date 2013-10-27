@@ -42,7 +42,7 @@ void uri_entered_cb(GtkWidget* entry, gpointer data)
 
 	if(tab_index < 0)
 	{
-		printf("error\n");
+		printf("tab indexing error\n");
                 return;
 	}
 
@@ -51,11 +51,15 @@ void uri_entered_cb(GtkWidget* entry, gpointer data)
 
 	// Now you get the URI from the controller
 	child_req_to_parent new_uri;  //Declare new message
-	strncpy (new_uri.req.uri_req.uri, uri, 512); //Add the new uri to the request struct
+	if (!strncpy (new_uri.req.uri_req.uri, uri, 512)){
+		printf("error copying url into struct\n");
+	} //Add the new uri to the request struct
 	new_uri.type = NEW_URI_ENTERED;
 	new_uri.req.uri_req.render_in_tab = tab_index;
 	
-	write(channel.child_to_parent_fd[1], &new_uri, sizeof(child_req_to_parent)); //Write new uri request into pipe
+	if(!write(channel.child_to_parent_fd[1], &new_uri, sizeof(child_req_to_parent))){
+							printf("Error writing to pipe\n");
+						} //Write new uri request into pipe
 }
 
 /*
@@ -96,7 +100,9 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
 	create_tab.type = CREATE_TAB;
 	create_tab.req.new_tab_req.tab_index = tab_index;
 	
-	write(channel.child_to_parent_fd[1], &create_tab, sizeof(child_req_to_parent));
+	if(!write(channel.child_to_parent_fd[1], &create_tab, sizeof(child_req_to_parent))){
+		printf("Error writing to pipe\n");
+	}
 }
 
 /*
@@ -106,11 +112,12 @@ void new_tab_created_cb(GtkButton *button, gpointer data)
  * Function:            This function will make a CONTROLLER window and be blocked until the program terminate.
  */
 int run_control(comm_channel comm)
-{	//char* msg = "Hello from control!";
+{
 	browser_window * b_window = NULL;
-	
 	//Create controler process
-	create_browser(CONTROLLER_TAB, 0, G_CALLBACK(new_tab_created_cb), G_CALLBACK(uri_entered_cb), &b_window, comm);
+	if(create_browser(CONTROLLER_TAB, 0, G_CALLBACK(new_tab_created_cb), G_CALLBACK(uri_entered_cb), &b_window, comm)!=0){
+		printf("Error creating controller\n");
+	}
 
 	//go into infinite loop.
 	show_browser();
@@ -132,11 +139,15 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 	browser_window * b_window = NULL;
 	int r, flags;
 	//Create controler window
-	create_browser(URL_RENDERING_TAB, nTabIndex, G_CALLBACK(new_tab_created_cb), G_CALLBACK(uri_entered_cb), &b_window, comm);
+	if (create_browser(URL_RENDERING_TAB, nTabIndex, G_CALLBACK(new_tab_created_cb), G_CALLBACK(uri_entered_cb), &b_window, comm)!=0){
+		printf("Error creating browser");
+	}
 
 	child_req_to_parent req;
-	flags = fcntl(1 , F_GETFL, 0); //not sure if this call is right
-	fcntl(comm.parent_to_child_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
+	flags = fcntl(1 , F_GETFL, 0);
+	if (fcntl(comm.parent_to_child_fd[0], F_SETFL, flags | O_NONBLOCK)==-1){
+		perror("Error setting flags");
+	} //non-blocking read of child
 	
 	while (1) 
 	{
@@ -144,7 +155,6 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 		usleep(1000);
 
 		//Need to communicate with Router process here.
-		//Insert code here!!
 		if((r = read(comm.parent_to_child_fd[0], (void*) &req, sizeof(child_req_to_parent))) > 0){ 
 				printf("Router to tab Message %d:\n", r);
 				if(req.type == TAB_KILLED ){
@@ -155,7 +165,6 @@ int run_url_browser(int nTabIndex, comm_channel comm)
 					
 				}
 			}
-		//need to read for "render message" (same as above if statement)
 				
 
 	}
@@ -178,9 +187,14 @@ int main()
 	int r, i, j, index = -1;
 	child_req_to_parent chld_msg;
 	
-	pipe(controller.parent_to_child_fd);
-	pipe(controller.child_to_parent_fd);
-	
+	if (pipe(controller.parent_to_child_fd)==-1){
+		perror("Error creating pipe from parent to child\n");
+		exit(-1);
+	}
+	if (pipe(controller.child_to_parent_fd)==-1){
+		perror("Error creating pipe from child to parent\n");
+		exit(-1);
+	}
 	for (i = 0; i < MAX_TABS; i++){
 		openTab[i] = 0; //initialize all tabs to closed
 	}
@@ -191,15 +205,29 @@ int main()
 	}
 	
 	if (pid == 0){ //child
-		close(controller.parent_to_child_fd[1]); //close parent write
-		close(controller.child_to_parent_fd[0]); //close read for child to parent
+		if(close(controller.parent_to_child_fd[1])==-1){
+		perror("Error closing parent write end\n");
+		exit(-1);
+	} //close parent write
+		if(close(controller.child_to_parent_fd[0])==-1){
+		perror("Error closing child read end\n");
+		exit(-1);
+	} //close read for child to parent
 		run_control(controller);
 	}
 	else{ //parent
-		close(controller.parent_to_child_fd[0]); //close child read
-		close(controller.child_to_parent_fd[1]); //close write for child to parent
+		if(close(controller.parent_to_child_fd[0])==-1){
+		perror("Error closing child read end\n");
+		exit(-1);
+	} //close child read
+		if(close(controller.child_to_parent_fd[1])==-1){
+		perror("Error closing child write end\n");
+		exit(-1);
+	} //close write for child to parent
 		flags = fcntl(1 , F_GETFL, 0); //not sure if this call is right
-		fcntl(controller.child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
+		if(fcntl(controller.child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK)==-1){
+		perror("Error setting flags");
+	} //non-blocking read of child
 		while(1){
 			if((r = read(controller.child_to_parent_fd[0], (void*) &chld_msg, sizeof(child_req_to_parent))) > 0){ 
 				printf("The message %d:\n", r);
@@ -216,18 +244,38 @@ int main()
 					
 					if (index >= 0 && index < MAX_TABS && openTab[index] == 0){
 						openTab[index] = 1; //now open and not valid for future open
-						pipe(tab[index].parent_to_child_fd);
-						pipe(tab[index].child_to_parent_fd);
-						fcntl(tab[index].child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK); //non-blocking read of child
+						if(pipe(tab[index].parent_to_child_fd)==-1){
+							perror("Error creating pipe from child to parent\n");
+							exit(-1);
+						}
+						if(pipe(tab[index].child_to_parent_fd)==-1){
+							perror("Error creating pipe from child to parent\n");
+							exit(-1);
+						}
+						if(fcntl(tab[index].child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK)==-1){
+							perror("Error setting flags");
+						} //non-blocking read of child
 
 						if(fork() == 0) { //then child
-							close(tab[index].parent_to_child_fd[1]); //close parent write
-							close(tab[index].child_to_parent_fd[0]); //close read for child to parent
+							if(close(tab[index].parent_to_child_fd[1])==-1){
+								perror("Error closing parent write end\n");
+								exit(-1);
+							} //close parent write
+							if(close(tab[index].child_to_parent_fd[0])==-1){
+								perror("Error closing child read end\n");
+								exit(-1);
+							} //close read for child to parent
 							run_url_browser(index+1 , tab[index]);
 						}	
 						else{ //parent
-							close(tab[index].parent_to_child_fd[0]); //close child read
-							close(tab[index].child_to_parent_fd[1]); //close write for child to parent
+							if(close(tab[index].parent_to_child_fd[0])==-1){
+								perror("Error closing child read end\n");
+								exit(-1);
+							} //close child read
+							if(close(tab[index].child_to_parent_fd[1])==-1){
+								perror("Error closing child write end\n");
+								exit(-1);
+							} //close write for child to parent
 						}
 					}
 					else {
@@ -238,17 +286,24 @@ int main()
 					for (i = 0; i < MAX_TABS; i++){
 								if( openTab[i] == 1){
 									printf("Killing all tabs...\n");
-									write(tab[i].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent)); //send kill to child
-									close(tab[i].child_to_parent_fd[0]); //close tab pipes
-									close(tab[i].parent_to_child_fd[1]);
-									openTab[i] = 0; //show as closed tab
+									if(!write(tab[i].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent))){
+										printf("Error writing to pipe\n");
+									} //send kill to child
+									if(close(tab[i].child_to_parent_fd[0])==-1){
+										perror("Error closing child read end\n");
+										exit(-1);
+									} //close tab pipes
+									if(close(tab[i].parent_to_child_fd[1]));
+										openTab[i] = 0; //show as closed tab
 									}	
 
 					}
 					exit(1);
 				}
 				else if(chld_msg.type == NEW_URI_ENTERED){
-						write(tab[chld_msg.req.uri_req.render_in_tab].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent)); //send new_uri_entered to child
+						if(!write(tab[chld_msg.req.uri_req.render_in_tab].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent))){
+							printf("Error writing to pipe\n");
+						} //send new_uri_entered to child
 				}
 				else{
 					perror("Invalid Message from controller.\n Expecting 'new tab', 'new uri', or 'tab kill'.");
@@ -262,9 +317,17 @@ int main()
 					printf("Tab Message %d:\n", r);
 					if(chld_msg.type == TAB_KILLED){
 						printf("Kill Message from wrapper!");
-						write(tab[i].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent)); //send kill to child
-						close(tab[i].child_to_parent_fd[0]); //close tab pipes
-						close(tab[i].parent_to_child_fd[1]);
+						if(!write(tab[i].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent))){
+							printf("Error writing to pipe\n");
+						} //send kill to child
+						if(close(tab[i].child_to_parent_fd[0])==-1){
+							perror("Error closing child read end\n");
+							exit(-1);
+						} //close tab pipes
+						if(close(tab[i].parent_to_child_fd[1])==-1){
+							perror("Error closing child read end\n");
+							exit(-1);
+						}
 						openTab[i] = 0; //show as closed tab
 					}
 				}
