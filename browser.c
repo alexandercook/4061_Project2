@@ -296,12 +296,14 @@ int main()
 					exit(1);
 				}
 				else if(chld_msg.type == NEW_URI_ENTERED){
+					if (openTab[chld_msg.req.uri_req.render_in_tab] != 0){
 						if(!write(tab[chld_msg.req.uri_req.render_in_tab].parent_to_child_fd[1] , (void*) &chld_msg, sizeof(child_req_to_parent))){
 							printf("Error writing to pipe\n");
 						} //send new_uri_entered to child
+					} else{printf("Please enter the tab number of an open window.\n");}
 				}
 				else{
-					perror("Invalid Message from controller.\n Expecting 'new tab', 'new uri', or 'tab kill'.");
+					perror("Invalid Message from controller.\n Expecting 'new tab', 'new uri', or 'tab kill'.\n");
 				}
 			}
 			
